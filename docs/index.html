@@ -42,7 +42,8 @@
   <p class="placeholder">Embed your YouTube or Wokwi video here once recorded.</p>
 
   <h2>System Architecture</h2>
-  <p class="placeholder">Architecture diagram goes here.</p>
+  <img src="assets/architecture.svg" alt="App 5 system architecture diagram" style="width:100%">
+  <p>The pipeline runs across both ESP32-S3 cores. On Core 1, four tasks — producer, consumer, coordinator, and responder — form the main ECG processing chain, connected by a queue, an event group, and direct task notifications. A button-triggered ISR notifies the responder directly for simulated emergency events. An independent monitor task runs on Core 0, reporting system status without interfering with the real-time pipeline.</p>
 
   <h2>Task Table &amp; WCET Evidence</h2>
   <p class="placeholder">Task table from the handout calculator goes here.</p>
