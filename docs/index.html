@@ -26,7 +26,17 @@
   </p>
 
   <h2>Project Overview</h2>
-  <p class="placeholder">One-page overview goes here: what the system does, why it matters, and how it's built.</p>
+  <p>This project implements a real-time cardiac ICU patient monitoring system on an ESP32-S3, built in FreeRTOS and simulated in Wokwi. The system's core job is to move ECG telemetry from sensor to responder fast enough, and reliably enough, that a real bedside monitor could trust it — hard deadlines, not best-effort.</p>
+
+  <p>The system runs a four-task pipeline split across both ESP32-S3 cores: a <strong>producer</strong> task samples ECG data, a <strong>consumer</strong> task processes it, a <strong>coordinator</strong> task evaluates readiness and synchronization state, and a <strong>responder</strong> task handles the resulting alarm/output logic. A fifth monitoring task runs independently on Core 0, reporting system status over serial or a lightweight web interface.</p>
+
+  <p>Rather than relying on a single synchronization mechanism everywhere, the pipeline deliberately uses three different FreeRTOS IPC primitives, each chosen for the job it's actually suited to: a <strong>queue</strong> hands ECG samples from producer to consumer without blocking either side; an <strong>event group</strong> enforces an AND-rendezvous so the coordinator only proceeds once every prerequisite condition is met; and <strong>direct task notifications</strong> provide the fastest possible wakeup path — both from the coordinator to the responder, and from a hardware interrupt (button press) straight to the responder for simulated emergency events.</p>
+
+  <p>Two real concurrency bugs surfaced during development and are documented rather than hidden: both were task-creation-order races, where a higher-priority task on one core began running before an IPC object it depended on had been created on the other core, causing a null-handle fault. The fix in both cases was the same underlying lesson — all IPC objects (semaphores, queues, event groups) must be created before any task that references them, regardless of which core creates which task first. This is the kind of subtle multi-core hazard that doesn't show up in single-core FreeRTOS work, and catching it firsthand is part of what makes this a genuine systems project rather than a scheduling exercise.</p>
+
+  <p>The system also includes a measured comparison of its two fastest signaling paths: direct task notification and binary semaphore, benchmarked with <code>esp_timer_get_time()</code> timestamp deltas rather than a simulated logic analyzer, since Wokwi's timing behavior made hardware-level measurement unreliable. Both paths cluster tightly around 17–19 µs baseline latency, with occasional outliers attributable to simulator jitter rather than a fundamental property of either primitive — an honest result, not a manufactured "one primitive wins" narrative.</p>
+
+  <p>Together, these choices reflect the project's real goal: not just getting an ECG pipeline to run, but building one where every timing and synchronization decision can be defended, measured, and shown to fail safely when something goes wrong.</p>
 
   <h2>Demo Video</h2>
   <p class="placeholder">Embed your YouTube or Wokwi video here once recorded.</p>
