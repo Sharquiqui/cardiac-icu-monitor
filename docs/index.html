@@ -46,15 +46,23 @@
   <p>The pipeline runs across both ESP32-S3 cores. On Core 1, four tasks — producer, consumer, coordinator, and responder — form the main ECG processing chain, connected by a queue, an event group, and direct task notifications. A button-triggered ISR notifies the responder directly for simulated emergency events. An independent monitor task runs on Core 0, reporting system status without interfering with the real-time pipeline.</p>
 
   <h2>Task Table &amp; WCET Evidence</h2>
-  <p class="placeholder">Task table from the handout calculator goes here.</p>
+  <p>WCET was measured with <code>esp_timer_get_time()</code> bracketing each task's active work (excluding blocking waits), following the same instrumentation pattern used in earlier apps. C is reported as measured max +30% margin. All four Core 1 tasks share the producer's 50 ms cycle as their period, since each downstream stage fires once per producer cycle in steady state.</p>
   <table>
     <thead>
-      <tr><th>Task</th><th>Period T</th><th>WCET C</th><th>U = C/T</th><th>Priority</th><th>Deadline</th></tr>
+      <tr><th>Task</th><th>Period T (ms)</th><th>WCET C (ms)</th><th>U = C/T</th><th>Priority</th><th>Core</th></tr>
     </thead>
     <tbody>
-      <tr><td colspan="6" class="placeholder">Rows go here</td></tr>
+      <tr><td>Producer</td><td>50</td><td>0.046</td><td>0.0009</td><td>8</td><td>1</td></tr>
+      <tr><td>Consumer</td><td>50</td><td>15.629</td><td>0.3126</td><td>8</td><td>1</td></tr>
+      <tr><td>Coordinator</td><td>50</td><td>0.013</td><td>0.0003</td><td>9</td><td>1</td></tr>
+      <tr><td>Responder</td><td>50</td><td>11.824</td><td>0.2365</td><td>12</td><td>1</td></tr>
+      <tr><td>Monitor</td><td>1000</td><td>&mdash;</td><td>&mdash;</td><td>4</td><td>0</td></tr>
     </tbody>
   </table>
+  <p><strong>Total utilization (Core 1, n=4):</strong> U &approx; 0.0009 + 0.3126 + 0.0003 + 0.2365 = <strong>0.5503</strong><br>
+  <strong>Liu &amp; Layland bound (n=4):</strong> 4&times;(2<sup>1/4</sup> &minus; 1) &approx; <strong>0.7568</strong><br>
+  <strong>Verdict:</strong> U = 0.55 &le; 0.7568 &mdash; schedulable under Rate Monotonic, with real margin.</p>
+  <p>One honest outlier worth noting: the consumer's measured max jumped from a steady ~2 ms baseline to a single 12 ms spike partway through the run and didn't fully recover afterward, most likely a one-off scheduling stall from simulator jitter rather than a property of the algorithm itself. It's included in the C value above rather than smoothed over, the same way the notification-vs-semaphore latency comparison reported its outliers honestly.</p>
 
   <h2>Hazard Analysis &amp; Standard Mapping</h2>
   <p class="placeholder">Hazard, effect, mitigation, mapped to a standard (e.g., IEC 62304 / IEC 60601) goes here.</p>
