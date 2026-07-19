@@ -65,7 +65,45 @@
   <p>One honest outlier worth noting: the consumer's measured max jumped from a steady ~2 ms baseline to a single 12 ms spike partway through the run and didn't fully recover afterward, most likely a one-off scheduling stall from simulator jitter rather than a property of the algorithm itself. It's included in the C value above rather than smoothed over, the same way the notification-vs-semaphore latency comparison reported its outliers honestly.</p>
 
   <h2>Hazard Analysis &amp; Standard Mapping</h2>
-  <p class="placeholder">Hazard, effect, mitigation, mapped to a standard (e.g., IEC 62304 / IEC 60601) goes here.</p>
+  <p>This analysis follows the structure of <strong>IEC 62304</strong> (medical device software lifecycle), which requires identifying software hazards, their effects, and the risk controls in place &mdash; the standard that governs software risk specifically, as distinct from IEC 60601's broader electrical/mechanical safety scope. Each hazard below is drawn from actual behavior observed or engineered during development, not a hypothetical checklist.</p>
+  <table>
+    <thead>
+      <tr><th>Hazard</th><th>Effect</th><th>Mitigation</th><th>IEC 62304 mapping</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Queue overflow under consumer stall</td>
+        <td>ECG samples silently dropped; displayed HR could lag reality</td>
+        <td>Queue sized with ~2.7&times; margin over worst-case stall estimate; drop-newest policy (never blocks the producer); overflow event counted and logged</td>
+        <td>&sect;5.2 risk control implementation</td>
+      </tr>
+      <tr>
+        <td>Task-creation-order race (IPC object used before creation)</td>
+        <td>NULL-handle fault, full system crash on boot &mdash; total loss of monitoring</td>
+        <td>Found and fixed during development: all IPC objects (queue, event group, semaphore) now created before any task that references them, documented as a standing rule</td>
+        <td>&sect;5.1 development planning &amp; defect resolution</td>
+      </tr>
+      <tr>
+        <td>Consumer execution-time outlier (measured 12 ms spike vs. ~2 ms baseline)</td>
+        <td>Delayed arrhythmia decision within a single 50 ms cycle</td>
+        <td>WCET measured with margin (C = max + 30%); total utilization (0.55) stays well under the Rate-Monotonic bound (0.7568) even with the outlier included, so one slow cycle doesn't cascade into missed deadlines</td>
+        <td>&sect;5.5 verification of real-time performance</td>
+      </tr>
+      <tr>
+        <td>Responder task stalls or is starved (missed/delayed alarm)</td>
+        <td>An abnormal HR reading goes unflagged &mdash; the highest-severity failure mode for this system</td>
+        <td>Responder runs at the highest priority in the task set (12); per-task heartbeat counters are exposed on the monitor output so a stalled responder is immediately visible rather than silently failing</td>
+        <td>&sect;5.7 problem resolution; alarm-system intent aligned with IEC 60601-1-8</td>
+      </tr>
+      <tr>
+        <td>Spurious button-ISR triggers (switch bounce)</td>
+        <td>False nurse-call events, unnecessary responder wakeups</td>
+        <td>50 ms software debounce window in the ISR before a signal is accepted</td>
+        <td>&sect;5.5 verification of interrupt handling</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Taken together, these hazards point to one design theme worth calling out explicitly: the failure mode that matters most in a patient monitor isn't "the system is slow" &mdash; it's "the system is silent." That's why the mitigations lean on visibility (heartbeats, overflow counters, latency logging) as much as raw timing margin. A system that fails should fail loudly.</p>
 
   <h2>Graceful Degradation</h2>
   <p class="placeholder">What fails, how it's detected, what the system does instead.</p>
