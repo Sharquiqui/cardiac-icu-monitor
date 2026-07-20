@@ -132,7 +132,15 @@
   <p>To reproduce the fault-injection demo specifically: set <code>INDUCE_FAILURE</code> to <code>1</code>, keep <code>MEASURE_SEMAPHORE_LATENCY</code> at <code>0</code>, run the simulation, and watch the serial log transition from normal <code>[responder] cycle OK</code> lines to repeated <code>[Medical] STALE</code> alerts once the simulated sensor drops out.</p>
 
   <h2>Tailored For</h2>
-  <p class="placeholder">Target role and why these design choices fit it.</p>
+  <p>This system is tailored toward <strong>safety-critical and medical embedded roles</strong>. That choice shaped which features made the cut and which didn't &mdash; a consumer-IoT framing would have prioritized connectivity and UX polish; this one prioritizes defensibility instead.</p>
+  <p>Concretely, that meant treating a few things as non-negotiable rather than nice-to-have:</p>
+  <ul>
+    <li><strong>Every timing claim is measured, not assumed.</strong> WCET, IPC latency, and utilization are all pulled from real Wokwi runs with reported n, not back-of-envelope estimates &mdash; the kind of evidence an interviewer (or an auditor) can ask to see reproduced.</li>
+    <li><strong>Hazards are mapped to a real standard.</strong> The hazard analysis follows IEC 62304's structure rather than a generic risk table, because that's the standard that would actually govern this software if it shipped.</li>
+    <li><strong>Failures are visible, not silent.</strong> Every mitigation on this page &mdash; heartbeats, overflow counters, the STALE detector &mdash; exists because the worst failure mode for a patient monitor isn't slowness, it's silence. A system that can't tell you it's broken is more dangerous than one that's simply slow.</li>
+    <li><strong>Outliers are reported, not hidden.</strong> The consumer's 12&nbsp;ms WCET spike and the spurious button-ISR noise both stayed in the writeup instead of being edited out. In a safety context, a suspiciously clean dataset is a red flag, not a selling point.</li>
+  </ul>
+  <p>None of this required exotic engineering &mdash; just consistently choosing the boring, defensible option (a timeout instead of an infinite wait, a counter instead of silent failure, a real log instead of a claimed number) at every decision point. That consistency is the actual portfolio artifact here, more than any single feature.</p>
 
   <h2>README</h2>
   <p class="placeholder">Full README content rendered here (or link to README.md).</p>
