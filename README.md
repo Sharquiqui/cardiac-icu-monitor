@@ -79,7 +79,7 @@ To demonstrate this on demand rather than only describe it, an `INDUCE_FAILURE` 
 
 **Hardware/target:** ESP32-S3, simulated in Wokwi (no physical board required). **Toolchain:** ESP-IDF via the Wokwi web IDE.
 
-1. Open the Wokwi project: `https://wokwi.com/projects/469906597165240321`
+1. Open the Wokwi project: `https://wokwi.com/projects/470026174888643585`
 2. Click the play/simulate button. The serial monitor panel shows live output.
 3. Default configuration runs the pipeline normally — no button press or config change needed to see it working end to end.
 
@@ -102,4 +102,4 @@ None of this required exotic engineering — just consistently choosing the bori
 ## Task table & Wokwi project
 
 **Wokwi project:** `Ramkissoon-FINAL-RTS26Summer`
-**Wokwi URL:** https://wokwi.com/projects/469906597165240321
+**Wokwi URL:** https://wokwi.com/projects/470026174888643585
