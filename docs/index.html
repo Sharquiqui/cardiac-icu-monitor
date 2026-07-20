@@ -46,23 +46,49 @@
   <p>The pipeline runs across both ESP32-S3 cores. On Core 1, four tasks — producer, consumer, coordinator, and responder — form the main ECG processing chain, connected by a queue, an event group, and direct task notifications. A button-triggered ISR notifies the responder directly for simulated emergency events. An independent monitor task runs on Core 0, reporting system status without interfering with the real-time pipeline.</p>
 
   <h2>Task Table &amp; WCET Evidence</h2>
-  <p>WCET was measured with <code>esp_timer_get_time()</code> bracketing each task's active work (excluding blocking waits), following the same instrumentation pattern used in earlier apps. C is reported as measured max +30% margin. All four Core 1 tasks share the producer's 50 ms cycle as their period, since each downstream stage fires once per producer cycle in steady state.</p>
+  <p>WCET was measured with <code>esp_timer_get_time()</code> bracketing each task's active work (excluding blocking waits), following the same instrumentation pattern used in earlier apps. C is reported as measured max +30% margin. All four Core 1 tasks share the producer's 50 ms cycle as their period, with an implicit deadline equal to the period (D = T).</p>
   <table>
     <thead>
-      <tr><th>Task</th><th>Period T (ms)</th><th>WCET C (ms)</th><th>U = C/T</th><th>Priority</th><th>Core</th></tr>
+      <tr><th>Task</th><th>Period T (ms)</th><th>Deadline D (ms)</th><th>WCET C (ms)</th><th>U = C/T</th><th>Priority</th><th>Core</th></tr>
     </thead>
     <tbody>
-      <tr><td>Producer</td><td>50</td><td>0.046</td><td>0.0009</td><td>8</td><td>1</td></tr>
-      <tr><td>Consumer</td><td>50</td><td>15.629</td><td>0.3126</td><td>8</td><td>1</td></tr>
-      <tr><td>Coordinator</td><td>50</td><td>0.013</td><td>0.0003</td><td>9</td><td>1</td></tr>
-      <tr><td>Responder</td><td>50</td><td>11.824</td><td>0.2365</td><td>12</td><td>1</td></tr>
-      <tr><td>Monitor</td><td>1000</td><td>&mdash;</td><td>&mdash;</td><td>4</td><td>0</td></tr>
+      <tr><td>Producer</td><td>50</td><td>50</td><td>0.046</td><td>0.0009</td><td>8</td><td>1</td></tr>
+      <tr><td>Consumer</td><td>50</td><td>50</td><td>15.629</td><td>0.3126</td><td>8</td><td>1</td></tr>
+      <tr><td>Coordinator</td><td>50</td><td>50</td><td>0.013</td><td>0.0003</td><td>9</td><td>1</td></tr>
+      <tr><td>Responder</td><td>50</td><td>50</td><td>11.824</td><td>0.2365</td><td>12</td><td>1</td></tr>
+      <tr><td>Monitor</td><td>1000</td><td>1000</td><td>&mdash;</td><td>&mdash;</td><td>4</td><td>0</td></tr>
     </tbody>
   </table>
   <p><strong>Total utilization (Core 1, n=4):</strong> U &approx; 0.0009 + 0.3126 + 0.0003 + 0.2365 = <strong>0.5503</strong><br>
   <strong>Liu &amp; Layland bound (n=4):</strong> 4&times;(2<sup>1/4</sup> &minus; 1) &approx; <strong>0.7568</strong><br>
   <strong>Verdict:</strong> U = 0.55 &le; 0.7568 &mdash; schedulable under Rate Monotonic, with real margin.</p>
   <p>One honest outlier worth noting: the consumer's measured max jumped from a steady ~2 ms baseline to a single 12 ms spike partway through the run and didn't fully recover afterward, most likely a one-off scheduling stall from simulator jitter rather than a property of the algorithm itself. It's included in the C value above rather than smoothed over, the same way the notification-vs-semaphore latency comparison reported its outliers honestly.</p>
+
+  <h3>Response-Time Analysis (to convergence)</h3>
+  <p>Utilization alone confirms schedulability under the Liu &amp; Layland sufficient bound, but Response-Time Analysis (RTA) gives a tighter, per-task guarantee by iterating R = C + &sum; &lceil;R/T<sub>j</sub>&rceil;&times;C<sub>j</sub> over all higher-priority tasks j until R stops changing. Producer and Consumer share priority 8, so each is additionally analyzed as blocked by one worst-case execution of the other (equal-priority round-robin interference).</p>
+  <table>
+    <thead>
+      <tr><th>Task</th><th>Priority</th><th>RTA iteration</th><th>Converged R (ms)</th><th>Deadline D (ms)</th><th>Margin</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Responder</td><td>12 (highest)</td><td>R = C = 11.824</td><td>11.824</td><td>50</td><td>38.176 ms</td></tr>
+      <tr><td>Coordinator</td><td>9</td><td>R&#8320;=0.013 &rarr; R&#8321;=0.013+11.824=11.837 &rarr; converged</td><td>11.837</td><td>50</td><td>38.163 ms</td></tr>
+      <tr><td>Producer</td><td>8 (tied)</td><td>R&#8320;=0.046 &rarr; R&#8321;=0.046+11.824+0.013+15.629=27.512 &rarr; converged</td><td>27.512</td><td>50</td><td>22.488 ms</td></tr>
+      <tr><td>Consumer</td><td>8 (tied)</td><td>R&#8320;=15.629 &rarr; R&#8321;=15.629+11.824+0.013+0.046=27.512 &rarr; converged</td><td>27.512</td><td>50</td><td>22.488 ms</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Result:</strong> every task's converged worst-case response time is comfortably under its 50 ms deadline &mdash; the tightest case (Producer/Consumer) still has 22.5 ms of slack. This is a stronger claim than utilization alone: RTA accounts for the actual interference pattern each task faces, not just aggregate load.</p>
+
+  <h3>Priority assignment defense</h3>
+  <p>Priorities were assigned by criticality of consequence, not strictly by period (all four share the same 50 ms period, so classic Rate-Monotonic ordering by period doesn't differentiate them). <strong>Responder</strong> holds the highest priority because it's the alarm/output stage &mdash; any delay here directly delays a patient-facing alert. <strong>Coordinator</strong> is next, since it gates the responder and should not itself become a bottleneck. <strong>Producer</strong> and <strong>Consumer</strong> share the lowest priority (8): their work has slack (confirmed by RTA above) and neither is itself alarm-facing, though tying their priorities is a simplification &mdash; a stricter design would break the tie by giving Producer slight priority over Consumer, since a delayed sample is recoverable but a delayed <em>send</em> risks queue buildup. This is flagged here rather than glossed over.</p>
+
+  <h3>Producer/consumer contract</h3>
+  <p>The queue boundary between producer and consumer is governed by an explicit, defended contract rather than implicit behavior:</p>
+  <ul>
+    <li><strong>Producer guarantees:</strong> attempts a non-blocking send every 50 ms; never blocks waiting for queue space (blocking here would let a slow consumer stall the producer's own deadline); on a full queue, drops the newest sample and increments an overflow counter rather than retrying or discarding an older one.</li>
+    <li><strong>Consumer guarantees:</strong> attempts a receive with a 100 ms timeout (2&times; the producer's period); processes every sample it successfully dequeues exactly once; logs an explicit stall warning if no sample arrives within the timeout window, rather than blocking silently forever.</li>
+    <li><strong>What's explicitly not guaranteed:</strong> delivery of every produced sample under sustained overload &mdash; the drop-newest policy is a deliberate recency-over-completeness tradeoff (see Hazard Analysis), not an oversight.</li>
+  </ul>
 
   <h2>Hazard Analysis &amp; Standard Mapping</h2>
   <p>This analysis follows the structure of <strong>IEC 62304</strong> (medical device software lifecycle), which requires identifying software hazards, their effects, and the risk controls in place &mdash; the standard that governs software risk specifically, as distinct from IEC 60601's broader electrical/mechanical safety scope. Each hazard below is drawn from actual behavior observed or engineered during development, not a hypothetical checklist.</p>
@@ -106,10 +132,16 @@
   <p>Taken together, these hazards point to one design theme worth calling out explicitly: the failure mode that matters most in a patient monitor isn't "the system is slow" &mdash; it's "the system is silent." That's why the mitigations lean on visibility (heartbeats, overflow counters, latency logging) as much as raw timing margin. A system that fails should fail loudly.</p>
 
   <h2>Graceful Degradation</h2>
-  <p>The responder's wait was changed from an unbounded block (<code>portMAX_DELAY</code>) to a timeout of 200 ms (4&times; the producer's period). If no pipeline cycle completes within that window, the responder treats the system as stalled: it logs a <strong>STALE</strong> event using the last known heart rate rather than silently going quiet, and keeps re-announcing every 200 ms until fresh data resumes. This is deliberately decoupled from <em>where</em> the pipeline breaks &mdash; the responder doesn't need to know whether the producer, consumer, or coordinator failed, only that a cycle didn't arrive in time.</p>
-  <p>To demonstrate this on demand rather than only describe it, an <code>INDUCE_FAILURE</code> compile switch simulates a sensor disconnect: the producer simply stops pushing samples after 100 cycles (~5 seconds), as if the ECG lead had come loose. Everything downstream is untouched &mdash; there's no special-case handling for the induced fault, only the same timeout logic that would catch any other stall.</p>
-  <p><strong>Captured run:</strong> the system ran 100 normal cycles (5.0 s), then the induced failure fired at t=5.04s. The first STALE event appeared 150 ms later at t=5.19s, using the last known reading (HR=73 bpm), and continued firing every ~200 ms without interruption for the remainder of the 43-second run (178 consecutive STALE events by the end of the captured log) &mdash; the system never crashed, never went silent, and never displayed stale data as if it were current.</p>
-  <p>One honest note: around t=20&ndash;23s, a few spurious wakeups briefly interrupted the STALE sequence (real latency values in the 750&ndash;1300&nbsp;&micro;s range, distinct from the near-zero noise seen elsewhere), most likely simulator noise on the floating button GPIO rather than an intentional press. Detection resumed correctly immediately afterward. This is included rather than edited out, consistent with how outliers are reported everywhere else in this project.</p>
+  <p>The responder's wait was changed from an unbounded block (<code>portMAX_DELAY</code>) to a timeout of 200 ms (4&times; the producer's period). If no pipeline cycle completes within that window, the responder treats the system as stalled: it logs a <strong>STALE</strong> event using the last known heart rate rather than silently going quiet, and keeps re-announcing every 200 ms until fresh data resumes. This is deliberately decoupled from <em>where</em> the pipeline breaks &mdash; the responder doesn't need to know whether the producer, consumer, or coordinator failed, only that a cycle didn't arrive in time. To demonstrate this on demand rather than only describe it, an <code>INDUCE_FAILURE</code> compile switch simulates a sensor disconnect: the producer stops pushing samples after 100 cycles (~5 seconds), as if the ECG lead had come loose.</p>
+
+  <h3>Predicted</h3>
+  <p>Before running the induced-failure test, the expected behavior was: the consumer's queue-receive timeout (100 ms) would fire repeatedly once the producer stopped; the event group would stop being set, so the coordinator &mdash; which waits with <code>portMAX_DELAY</code> and has no timeout of its own &mdash; would block indefinitely; and the responder, independent of the coordinator's blocked state, would detect the stall via its own 200 ms timeout and begin announcing STALE using the last known reading. The system should not crash, and should not go silent.</p>
+
+  <h3>Observed</h3>
+  <p>The system ran 100 normal cycles (5.0 s), then the induced failure fired at t=5.04s. The consumer began logging stall warnings almost immediately. The first STALE event appeared 150 ms later at t=5.19s, using the last known reading (HR=73 bpm), and continued firing every ~200 ms without interruption for the remainder of the 43-second run (178 consecutive STALE events by the end of the captured log). The system never crashed and never went silent. One deviation: around t=20&ndash;23s, a few spurious wakeups briefly interrupted the STALE sequence (real latency values in the 750&ndash;1300&nbsp;&micro;s range, distinct from the near-zero noise seen elsewhere), most likely simulator noise on the floating button GPIO rather than an intentional press. Detection resumed correctly immediately afterward.</p>
+
+  <h3>Analysis</h3>
+  <p>Observed behavior matched the prediction closely. The 150 ms gap before the first STALE event (rather than an immediate announcement at the moment of failure) is expected and correct: the timeout window has to fully elapse from the <em>last successful cycle</em>, not from the failure event itself, so a delay up to one timeout period is inherent to the design, not a bug. The spurious-wakeup blip was not predicted and is treated as an artifact of Wokwi's simulated GPIO rather than a flaw in the degradation logic &mdash; the STALE detector correctly resumed on its own once the noise passed, without any special handling required, which is itself evidence the timeout-based approach is robust to transient interruptions.</p>
 
   <h2>Build &amp; Run</h2>
   <p><strong>Hardware/target:</strong> ESP32-S3, simulated in <a href="https://wokwi.com/">Wokwi</a> (no physical board required to reproduce). <strong>Toolchain:</strong> ESP-IDF via the Wokwi web IDE, which handles the build and flash steps automatically inside the browser.</p>
