@@ -175,7 +175,61 @@
   <p>None of this required exotic engineering &mdash; just consistently choosing the boring, defensible option (a timeout instead of an infinite wait, a counter instead of silent failure, a real log instead of a claimed number) at every decision point. That consistency is the actual portfolio artifact here, more than any single feature.</p>
 
   <h2>README</h2>
-  <p class="placeholder">Full README content rendered here (or link to README.md).</p>
+  <p class="placeholder">The content below mirrors <code>README.md</code> at the repo root, which is the canonical submission artifact.</p>
+
+  <h3>AI Disclosure</h3>
+  <p>AI was used for formatting, wording, and document structure only. All calculations, analysis, engineering reasoning, and design decisions in this document are my own.</p>
+
+  <h3>Demo</h3>
+  <ul>
+    <li>Video: <em>&lt;link once recorded&gt;</em></li>
+    <li>Live Wokwi: <code>Ramkissoon-FINAL-RTS26Summer</code></li>
+    <li>Wokwi project: <a href="https://wokwi.com/projects/469906597165240321">https://wokwi.com/projects/469906597165240321</a></li>
+  </ul>
+
+  <h3>Architecture</h3>
+  <pre style="background:#F2F5F4; border:1px solid #D6DEDE; border-radius:6px; padding:16px; overflow-x:auto; font-family:'Courier New', monospace; font-size:0.85rem; line-height:1.4;">
+                    CORE 0 (observability plane)
+  +--------------------------------------------------------------+
+  |  serial_monitor_task / webmonitor_task    (pri 4, 1000 ms)   |
+  |  reads only: queue depth, event bits, heartbeats, decision   |
+  +--------------------------------------------------------------+
+                         ^  read-only, no write hazard
+  ==================================================================
+                    CORE 1 (real-time plane)
+
+  +-----------+  Queue    +-----------+  EvtGrp   +-------------+  Notify   +-----------+
+  | producer  |---------->| consumer  |---------->| coordinator |---------->| responder |
+  | "ecg_     |           | "arr_     |           | "sync"      |           | "alert"   |
+  |  sample"  |           |  decide"  |           | pri 9       |           | pri 12    |
+  | pri 8     |           | pri 8     |           |             |           | (highest) |
+  +-----------+           +-----------+           +-------------+           +-----------+
+                                                                                   ^
+                                                                       Notify/Sem |
+                                                                            +-----------+
+                                                                            | button    |
+                                                                            | ISR GPIO18|
+                                                                            +-----------+</pre>
+  <p>The pipeline runs across both ESP32-S3 cores. On Core 1, four tasks form the ECG processing chain, connected by three distinct IPC primitives chosen for the job each is suited to: a <strong>queue</strong> (producer &rarr; consumer, non-blocking send), an <strong>event group</strong> (AND-rendezvous, both halves of a cycle &rarr; coordinator), and <strong>direct task notification</strong> (coordinator &rarr; responder, and button ISR &rarr; responder, identical wakeup path). An independent monitor task runs on Core 0.</p>
+
+  <h3>Tasks &amp; timing (WCET evidence)</h3>
+  <p>See the full task table, RTA convergence, priority defense, and producer/consumer contract in the <strong>Task Table &amp; WCET Evidence</strong> section above &mdash; reproduced identically here as part of the README.</p>
+
+  <h3>Hazard analysis &amp; standard mapping</h3>
+  <p>See the full IEC 62304&ndash;mapped hazard table in the <strong>Hazard Analysis &amp; Standard Mapping</strong> section above.</p>
+
+  <h3>Graceful degradation</h3>
+  <p>See the Predicted / Observed / Analysis writeup in the <strong>Graceful Degradation</strong> section above.</p>
+
+  <h3>Build &amp; run</h3>
+  <p>See the <strong>Build &amp; Run</strong> section above for full steps and compile-time switches.</p>
+
+  <h3>Tailored for</h3>
+  <p>See the <strong>Tailored For</strong> section above.</p>
+
+  <h3>Task table &amp; Wokwi project</h3>
+  <p><strong>Wokwi project:</strong> <code>Ramkissoon-FINAL-RTS26Summer</code><br>
+  <strong>Wokwi URL:</strong> <a href="https://wokwi.com/projects/469906597165240321">https://wokwi.com/projects/469906597165240321</a></p>
 
 </body>
 </html>
